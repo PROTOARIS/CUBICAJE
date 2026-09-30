@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador 3D de cubicaje y consolidación multicliente</title>
+
+<!-- Tipografías: Barlow (texto) y Barlow Condensed (títulos y cifras), con respaldo del sistema si no hay internet -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind CSS (interfaz) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      fontFamily: { sans: ['Barlow', 'system-ui', 'sans-serif'], cond: ['"Barlow Condensed"', 'Barlow', 'sans-serif'] },
+      colors: { ink: '#16202b', steel: '#5b6b7b', paper: '#f1f3f5', line: '#d5dbe1', marine: '#0f766e' }
+    } }
+  };
+</script>
+
+<!-- Three.js r128 + OrbitControls (rotar, zoom y pan con el mouse) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<style>
+  :root { --line: #d5dbe1; --ink: #16202b; --steel: #5b6b7b; --marine: #0f766e; }
+  html, body { font-family: Barlow, system-ui, sans-serif; color: var(--ink); }
+
+  /* Campos de formulario */
+  .inp { width: 100%; background: #fff; border: 1px solid #c4cdd6; border-radius: 5px; padding: 4px 7px; font-size: 13px; color: var(--ink); }
+  .inp:focus { outline: 2px solid var(--marine); outline-offset: -1px; border-color: var(--marine); }
+  .lbl { display: block; font-size: 11.5px; color: var(--steel); margin-bottom: 2px; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer; }
+  .chk input { accent-color: var(--marine); width: 15px; height: 15px; }
+
+  /* Botones */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; font-size: 13px;
+         border-radius: 5px; padding: 6px 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  .btn:hover { background: #eef2f5; }
+  .btn:focus-visible, .ico:focus-visible, .tab:focus-visible, .vbtn:focus-visible, .lg:focus-visible { outline: 2px solid var(--marine); outline-offset: 2px; }
+  .btn-primary { background: var(--marine); border-color: var(--marine); color: #fff; font-size: 15px; padding: 10px 14px; }
+  .btn-primary:hover { background: #0b5f58; }
+  .btn-primary:disabled { opacity: .6; cursor: wait; }
+  .btn-ghost { font-size: 12.5px; font-weight: 600; color: var(--marine); background: transparent; border: 1px dashed #9db8b5; border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+  .btn-ghost:hover { background: #e7f2f1; }
+  .ico { flex: none; width: 26px; height: 26px; border-radius: 5px; border: 0; background: transparent; color: var(--steel); cursor: pointer; }
+  .ico:hover { background: #e6eaee; color: #b42318; }
+
+  /* Bloque de cliente: la barra izquierda lleva el color asignado a su carga */
+  .client { border-left: 6px solid var(--c); background: #fff; padding: 10px 10px 12px 12px; border-bottom: 1px solid var(--line); }
+  .swatch { flex: none; width: 34px; height: 30px; padding: 0; border: 1px solid #c4cdd6; border-radius: 5px; background: none; cursor: pointer; }
+  .cargo { background: #f6f8fa; border: 1px solid #e1e6eb; border-radius: 6px; padding: 8px; }
+
+  /* Pestañas de contenedores */
+  .tab { flex: none; display: inline-flex; flex-direction: column; align-items: flex-start; padding: 5px 12px; border-radius: 5px;
+         border: 1px solid var(--line); background: #fff; font-weight: 600; font-size: 13px; line-height: 1.15; cursor: pointer; }
+  .tab span { font-weight: 500; font-size: 11.5px; color: var(--steel); }
+  .tab-on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .tab-on span { color: #b9c6d3; }
+
+  /* Controles superpuestos al visor 3D */
+  .vbtn { font-size: 12px; font-weight: 600; color: #dbe6f0; background: rgba(15,23,32,.72); border: 1px solid rgba(255,255,255,.16);
+          border-radius: 5px; padding: 4px 10px; cursor: pointer; backdrop-filter: blur(3px); }
+  .vbtn:hover { background: rgba(30,44,58,.9); }
+  .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #dbe6f0; background: rgba(15,23,32,.72);
+        border: 1px solid rgba(255,255,255,.14); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .lg i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .lg.off { opacity: .45; text-decoration: line-through; }
+
+  /* Indicadores */
+  .bar { height: 8px; background: #e2e7ec; border-radius: 4px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 4px; }
+  .num { font-family: 'Barlow Condensed', Barlow, sans-serif; font-weight: 600; letter-spacing: .01em; }
+  .sec-title { font-family: 'Barlow Condensed', Barlow, sans-serif; font-weight: 600; font-size: 17px; }
+  table.kt { width: 100%; font-size: 12.5px; border-collapse: collapse; }
+  table.kt th { text-align: right; font-weight: 500; color: var(--steel); padding: 3px 0 4px 6px; border-bottom: 1px solid var(--line); }
+  table.kt th:first-child, table.kt td:first-child { text-align: left; padding-left: 0; }
+  table.kt td { text-align: right; padding: 4px 0 4px 6px; border-bottom: 1px solid #edf0f3; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+
+<body class="bg-paper min-h-screen lg:h-screen lg:overflow-hidden flex flex-col">
+
+<!-- ================= ENCABEZADO ================= -->
+<header class="flex-none bg-ink text-white px-4 py-2.5 flex items-baseline gap-3">
+  <h1 class="font-cond text-2xl font-semibold leading-none">Simulador 3D de cubicaje</h1>
+  <span class="text-sm text-slate-300">Consolidación multicliente en contenedores marítimos</span>
+</header>
+
+<main class="flex-1 min-h-0 flex flex-col lg:flex-row">
+
+  <!-- ================= PANEL IZQUIERDO: ENTRADA DE DATOS ================= -->
+  <aside class="lg:w-[410px] lg:h-full flex-none flex flex-col border-r border-line bg-white">
+    <div class="flex-1 min-h-0 overflow-y-auto">
+
+      <!-- 1. Contenedor -->
+      <section class="p-4 border-b border-line">
+        <h2 class="sec-title mb-2">Contenedor</h2>
+        <label class="lbl" for="contSel">Tipo de contenedor</label>
+        <select id="contSel" class="inp"></select>
+        <p id="contInfo" class="text-[12.5px] text-steel mt-2 leading-snug"></p>
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label class="lbl" for="maxKg">Peso máximo de carga (kg)</label>
+            <input id="maxKg" type="number" min="1" step="100" class="inp">
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="chk"><input id="groupClient" type="checkbox"> Agrupar por cliente</label>
+          </div>
+        </div>
+        <p class="text-[11.5px] text-steel mt-2 leading-snug">El peso máximo es un valor típico de carga útil; ajústalo al de tu contenedor o línea naviera. Agrupar por cliente facilita la desconsolidación, pero puede ocupar un poco más de espacio.</p>
+      </section>
+
+      <!-- 2. Clientes y cargas -->
+      <section>
+        <div class="p-4 pb-3 flex items-center justify-between gap-2 flex-wrap">
+          <h2 class="sec-title">Clientes y carga</h2>
+          <div class="flex gap-2 flex-wrap">
+            <button id="btnExample" class="btn" type="button">Cargar ejemplo</button>
+            <button id="btnClear" class="btn" type="button">Limpiar</button>
+            <button id="btnAddClient" class="btn" type="button" style="border-color:#0f766e;color:#0f766e">+ Agregar cliente</button>
+          </div>
+        </div>
+        <div id="clients" class="border-t border-line"></div>
+      </section>
+    </div>
+
+    <!-- Botón de cálculo fijo al pie del panel -->
+    <div class="flex-none p-3 border-t border-line bg-paper">
+      <button id="btnCalc" class="btn btn-primary w-full" type="button">Calcular cubicaje</button>
+      <div id="msg" class="text-[12.5px] mt-2 leading-snug" role="status"></div>
+      <p class="text-[11.5px] text-steel mt-1 leading-snug">El cálculo se actualiza solo cuando agregas o quitas cajas, o cambias medidas, pesos o contenedor.</p>
+    </div>
+  </aside>
+
+  <!-- ================= PANEL CENTRAL: VISOR 3D ================= -->
+  <section class="flex-1 min-w-0 flex flex-col min-h-[70vh] lg:min-h-0">
+    <div class="flex-none flex items-center gap-2 px-3 py-2 border-b border-line bg-white">
+      <div id="tabs" class="flex gap-2 overflow-x-auto flex-1 py-0.5"></div>
+      <span id="dirtyBadge" class="hidden flex-none text-[12px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-1"></span>
+    </div>
+
+    <div id="viewport" class="relative flex-1 min-h-0" style="background: radial-gradient(ellipse at 50% 35%, #26374a 0%, #131c27 70%);">
+      <canvas id="gl" class="absolute inset-0 w-full h-full block"></canvas>
+
+      <div class="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+        <button class="vbtn" data-view="iso" type="button">Isométrica</button>
+        <button class="vbtn" data-view="top" type="button">Superior</button>
+        <button class="vbtn" data-view="side" type="button">Lateral</button>
+        <button class="vbtn" data-view="door" type="button">Puertas</button>
+        <button class="vbtn" id="btnShot" type="button">Guardar imagen</button>
+      </div>
+      <div id="legend" class="absolute bottom-3 left-3 right-3 flex gap-1.5 flex-wrap pointer-events-none"></div>
+      <div class="absolute top-3 right-3 text-[11.5px] text-slate-300/80 text-right leading-tight pointer-events-none">
+        Arrastrar: rotar · Rueda: zoom<br>Clic derecho: mover
+      </div>
+      <div id="tip" class="hidden absolute pointer-events-none z-10 text-[12px] leading-snug bg-slate-900/95 text-slate-100 border border-slate-600 rounded px-2.5 py-1.5 shadow-lg" style="max-width:240px"></div>
+      <div id="glError" class="hidden absolute inset-0 flex items-center justify-center p-6 text-center text-slate-200 text-sm">
+        No se pudo cargar Three.js. Revisa tu conexión a internet y recarga la página.
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL DERECHO: ESTADÍSTICAS ================= -->
+  <aside class="lg:w-[340px] lg:h-full flex-none overflow-y-auto border-l border-line bg-white">
+    <div id="kpis"></div>
+  </aside>
+</main>
+
+
+<!-- =====================================================================
+     MOTOR DE EMPAQUETADO 3D (bin packing heurístico)
+     Bloque independiente y sin dependencias del navegador.
+
+     Sistema de coordenadas del contenedor:
+       X = largo (0 = fondo cerrado, L = puertas) · Y = alto · Z = ancho
+
+     Estrategia:
+       1. Se ordenan las cajas: apilables primero, luego por área de base
+          y altura decrecientes (First-Fit Decreasing). Las NO apilables
+          van al final para que queden en la capa superior o en huecos del piso.
+       2. Se mantiene una lista de "puntos extremos" (esquinas libres). Cada caja
+          se coloca en el primer punto más bajo (Y), luego más al fondo (X) y
+          más a un lado (Z) donde quepa: así se construye piso por piso.
+       3. Se prueban las orientaciones permitidas y se elige la que deja menos
+          desperdicio en el ancho del contenedor.
+       4. Estabilidad: una caja elevada necesita al menos 75 % de su base
+          apoyada, y solo sobre cajas apilables.
+       5. Tras ubicar la caja se "compacta" (baja y se desliza hacia el fondo)
+          para cerrar huecos.
+       6. Lo que no entra (por volumen o peso) pasa al siguiente contenedor; antes de
+          cerrar el plan se intenta rellenar con esas cajas los huecos de los contenedores
+          anteriores (ajuste exhaustivo de esquinas).
+       7. Se prueban varias variantes de armado (piso por piso o pared por pared,
+          con o sin capa superior reservada para cajas no apilables, otro orden de
+          carga) y se conserva la que use MENOS contenedores; a igualdad, la que
+          deje más vacío el último. Se detiene si todo cabe en 1 contenedor o al agotar el tiempo.
+       8. Al final se verifica el resultado caja por caja (verifyPlan).
+     ===================================================================== -->
+<script>
+/*==PACKER_START==*/
+
+const EPS = 1e-6;
+const MIN_SUPPORT = 0.75;   // fracción mínima de la base que debe estar apoyada
+
+/** Orientaciones posibles [dx (largo cont.), dy (alto), dz (ancho cont.)] que caben en el contenedor. */
+function orientationsFor(def, cont) {
+  const { l, w, h, rot3 } = def;
+  let list = [[l, h, w], [w, h, l]];                       // giro sobre el eje vertical (siempre permitido)
+  if (rot3) list = list.concat([[l, w, h], [h, w, l], [w, l, h], [h, l, w]]); // volteos
+  const seen = new Set(), out = [];
+  for (const [dx, dy, dz] of list) {
+    const k = dx.toFixed(5) + '|' + dy.toFixed(5) + '|' + dz.toFixed(5);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (dx <= cont.L + EPS && dy <= cont.H + EPS && dz <= cont.W + EPS) out.push({ dx, dy, dz, st: def.stackable });
+  }
+  return out;
+}
+
+/**
+ * ¿Puede colocarse una caja de tamaño o en (x,y,z)?
+ * Devuelve 0 = sí · 1 = no, de forma permanente (colisión o encima de una caja no apilable)
+ *              · 2 = no, por apoyo insuficiente (puede cambiar si luego se ubican más cajas).
+ */
+function canPlace(x, y, z, o, placed) {
+  const x2 = x + o.dx, y2 = y + o.dy, z2 = z + o.dz;
+  let supported = 0;
+  for (let i = 0; i < placed.length; i++) {
+    const b = placed[i];
+    if (x < b.x2 - EPS && x2 > b.x + EPS && z < b.z2 - EPS && z2 > b.z + EPS) {   // se solapan en planta
+      if (y < b.y2 - EPS && y2 > b.y + EPS) return 1;                              // colisión 3D
+      if (!o.st && Math.abs(b.y - y2) <= EPS) return 1;                            // habría una caja encima de una no apilable
+      if (y > EPS && Math.abs(b.y2 - y) <= EPS) {                                  // esa caja queda debajo
+        if (!b.def.stackable) return 1;                                            // no se puede apilar encima
+        supported += (Math.min(x2, b.x2) - Math.max(x, b.x)) * (Math.min(z2, b.z2) - Math.max(z, b.z));
+      }
+    }
+  }
+  if (y > EPS && supported < MIN_SUPPORT * o.dx * o.dz - EPS) return 2;            // apoyo insuficiente
+  return 0;
+}
+
+/** Empuja la caja hacia abajo, luego al costado (Z) y al fondo (X) mientras siga siendo válida. */
+function compact(pos, o, placed) {
+  let { x, y, z } = pos;
+  for (let it = 0; it < 8; it++) {
+    let moved = false;
+    let ny = 0;
+    for (const b of placed) {
+      if (x < b.x2 - EPS && x + o.dx > b.x + EPS && z < b.z2 - EPS && z + o.dz > b.z + EPS && b.y2 <= y + EPS && b.y2 > ny) ny = b.y2;
+    }
+    if (ny < y - EPS && canPlace(x, ny, z, o, placed) === 0) { y = ny; moved = true; }
+
+    let nz = 0;
+    for (const b of placed) {
+      if (x < b.x2 - EPS && x + o.dx > b.x + EPS && y < b.y2 - EPS && y + o.dy > b.y + EPS && b.z2 <= z + EPS && b.z2 > nz) nz = b.z2;
+    }
+    if (nz < z - EPS && canPlace(x, y, nz, o, placed) === 0) { z = nz; moved = true; }
+
+    let nx = 0;
+    for (const b of placed) {
+      if (y < b.y2 - EPS && y + o.dy > b.y + EPS && z < b.z2 - EPS && z + o.dz > b.z + EPS && b.x2 <= x + EPS && b.x2 > nx) nx = b.x2;
+    }
+    if (nx < x - EPS && canPlace(nx, y, z, o, placed) === 0) { x = nx; moved = true; }
+
+    if (!moved) break;
+  }
+  return { x, y, z };
+}
+
+/**
+ * Busca la primera posición válida para la caja recorriendo los puntos extremos en orden.
+ * `dead` recuerda, por tipo de carga, los puntos donde ya es imposible colocarla (acelera mucho el cálculo).
+ */
+function findPosition(def, placed, eps, cont, dead, epOrder) {
+  eps.sort(epOrder === 'wall'
+    ? (a, b) => (a.x - b.x) || (a.y - b.y) || (a.z - b.z)     // 'wall': arma muros de piso a techo desde el fondo
+    : (a, b) => (a.y - b.y) || (a.x - b.x) || (a.z - b.z));  // 'layer': arma capas, piso por piso
+  let dset = dead.get(def.id);
+  if (!dset) { dset = new Set(); dead.set(def.id, dset); }
+  for (const p of eps) {
+    if (dset.has(p.k)) continue;
+    let best = null, permanent = true;
+    for (const o of def.orients) {
+      if (p.x + o.dx > cont.L + EPS || p.y + o.dy > cont.H + EPS || p.z + o.dz > cont.W + EPS) continue;
+      const r = canPlace(p.x, p.y, p.z, o, placed);
+      if (r === 2) permanent = false;
+      if (r !== 0) continue;
+      // Desperdicio de ancho que dejaría esta orientación (menos es mejor); desempate: menos largo consumido
+      const rem = cont.W - (p.z + o.dz);
+      const waste = rem - Math.floor(rem / o.dz + EPS) * o.dz;
+      if (!best || waste < best.waste - 1e-6 || (Math.abs(waste - best.waste) <= 1e-6 && o.dx < best.o.dx - 1e-9)) best = { o, waste };
+    }
+    if (best) {
+      const pos = compact(p, best.o, placed);
+      return { x: pos.x, y: pos.y, z: pos.z, o: best.o };
+    }
+    if (permanent) dset.add(p.k);
+  }
+  return null;
+}
+
+/** Superficie de contacto de una caja en (x,y,z) con paredes, piso y otras cajas (más contacto = mejor encaje). */
+function contactScore(x, y, z, o, placed, cont) {
+  const x2 = x + o.dx, y2 = y + o.dy, z2 = z + o.dz;
+  let c = 0;
+  if (y < EPS) c += o.dx * o.dz;
+  if (x < EPS) c += o.dy * o.dz;
+  if (x2 > cont.L - EPS) c += o.dy * o.dz;
+  if (z < EPS) c += o.dx * o.dy;
+  if (z2 > cont.W - EPS) c += o.dx * o.dy;
+  const ov = (a1, a2, b1, b2) => Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+  for (let i = 0; i < placed.length; i++) {
+    const b = placed[i];
+    if (Math.abs(b.x2 - x) < EPS) c += ov(y, y2, b.y, b.y2) * ov(z, z2, b.z, b.z2);
+    else if (Math.abs(b.x - x2) < EPS) c += ov(y, y2, b.y, b.y2) * ov(z, z2, b.z, b.z2);
+    if (Math.abs(b.z2 - z) < EPS) c += ov(x, x2, b.x, b.x2) * ov(y, y2, b.y, b.y2);
+    else if (Math.abs(b.z - z2) < EPS) c += ov(x, x2, b.x, b.x2) * ov(y, y2, b.y, b.y2);
+    if (Math.abs(b.y2 - y) < EPS) c += ov(x, x2, b.x, b.x2) * ov(z, z2, b.z, b.z2);
+    else if (Math.abs(b.y - y2) < EPS) c += ov(x, x2, b.x, b.x2) * ov(z, z2, b.z, b.z2);
+  }
+  return c;
+}
+
+/**
+ * Busca la mejor posición para la caja. Recorre los puntos extremos en orden, reúne hasta `look`
+ * candidatas válidas (cada una con todas sus orientaciones), las compacta y elige la de mayor
+ * contacto con paredes y otras cajas: así se evitan huecos. Con look = 1 equivale a "primer ajuste".
+ * `dead` recuerda, por tipo de carga, los puntos donde ya es imposible colocarla (acelera el cálculo).
+ */
+function findPositionContact(def, placed, eps, cont, dead, epOrder, look) {
+  eps.sort(epOrder === 'wall'
+    ? (a, b) => (a.x - b.x) || (a.y - b.y) || (a.z - b.z)     // 'wall': arma muros de piso a techo desde el fondo
+    : (a, b) => (a.y - b.y) || (a.x - b.x) || (a.z - b.z));  // 'layer': arma capas, piso por piso
+  let dset = dead.get(def.id);
+  if (!dset) { dset = new Set(); dead.set(def.id, dset); }
+  let found = 0, best = null;
+  for (const p of eps) {
+    if (dset.has(p.k)) continue;
+    let permanent = true, any = false;
+    for (const o of def.orients) {
+      if (p.x + o.dx > cont.L + EPS || p.y + o.dy > cont.H + EPS || p.z + o.dz > cont.W + EPS) continue;
+      const r = canPlace(p.x, p.y, p.z, o, placed);
+      if (r === 2) permanent = false;
+      if (r !== 0) continue;
+      any = true;
+      const pos = compact(p, o, placed);
+      const sc = contactScore(pos.x, pos.y, pos.z, o, placed, cont);
+      if (!best || sc > best.sc + 1e-9) best = { x: pos.x, y: pos.y, z: pos.z, o, sc };
+    }
+    if (any) { if (++found >= look) break; }
+    else if (permanent) dset.add(p.k);
+  }
+  return best;
+}
+
+function addEP(eps, x, y, z, cont) {
+  if (x > cont.L - EPS || y > cont.H - EPS || z > cont.W - EPS) return;
+  for (const q of eps) if (Math.abs(q.x - x) < EPS && Math.abs(q.y - y) < EPS && Math.abs(q.z - z) < EPS) return;
+  eps.push({ x, y, z, k: x.toFixed(4) + '|' + y.toFixed(4) + '|' + z.toFixed(4) });
+}
+
+/** Actualiza los puntos extremos tras ubicar una caja. */
+function updateEPs(eps, box, cont) {
+  for (let i = eps.length - 1; i >= 0; i--) {           // descartar puntos que quedaron dentro de la caja
+    const p = eps[i];
+    if (p.x >= box.x - EPS && p.x < box.x2 - EPS && p.y >= box.y - EPS && p.y < box.y2 - EPS && p.z >= box.z - EPS && p.z < box.z2 - EPS) eps.splice(i, 1);
+  }
+  addEP(eps, box.x2, box.y, box.z, cont);                                   // delante (hacia las puertas)
+  addEP(eps, box.x, box.y, box.z2, cont);                                   // al costado
+  if (box.def.stackable) addEP(eps, box.x, box.y2, box.z, cont);            // encima (solo si es apilable)
+}
+
+/** Llena un contenedor con la lista de cajas (ya ordenada). Devuelve lo ubicado y lo que sobra. */
+function packContainer(items, cont, epOrder, pick) {
+  const placed = [], unplaced = [], eps = [{ x: 0, y: 0, z: 0, k: '0.0000|0.0000|0.0000' }];
+  let weight = 0, volume = 0;
+  const failed = new Set();                              // tipos de carga que ya no caben en este contenedor
+  const dead = new Map();
+  for (const def of items) {
+    if (failed.has(def.id)) { unplaced.push(def); continue; }
+    if (weight + def.kg > cont.maxKg + EPS) { failed.add(def.id); unplaced.push(def); continue; }
+    const pos = pick === 'contacto' ? findPositionContact(def, placed, eps, cont, dead, epOrder, 4)
+                                   : findPosition(def, placed, eps, cont, dead, epOrder);
+    if (!pos) { failed.add(def.id); unplaced.push(def); continue; }
+    const box = {
+      x: pos.x, y: pos.y, z: pos.z, dx: pos.o.dx, dy: pos.o.dy, dz: pos.o.dz,
+      x2: pos.x + pos.o.dx, y2: pos.y + pos.o.dy, z2: pos.z + pos.o.dz, def
+    };
+    placed.push(box);
+    weight += def.kg;
+    volume += box.dx * box.dy * box.dz;
+    updateEPs(eps, box, cont);
+  }
+  return { placed, unplaced, weight, volume };
+}
+
+/** Generador pseudoaleatorio con semilla: mismos datos => mismo resultado. */
+function makeRng(seed) {
+  return function () {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Orden de carga según una estrategia { cls, key, noise }:
+ *   cls  'apilables' = apilables primero y NO apilables al final (capa superior o huecos del piso)
+ *        'mezcla'    = todo junto        'rigidas' = NO apilables primero (quedan en el piso)
+ *   key  criterio principal decreciente: 'area' (base), 'alto' o 'vol'
+ *   noise  variación aleatoria por tipo de carga (para explorar otras disposiciones)
+ * Con `groupByClient` se agrupa además por cliente.
+ */
+function sortItems(items, groupByClient, st) {
+  const kOf = d => (st.key === 'alto' ? d.h : st.key === 'vol' ? d.l * d.w * d.h : d.area) * ((st.noise && st.noise.get(d.id)) || 1);
+  return items.sort((a, b) => {
+    if (groupByClient && a.clientOrder !== b.clientOrder) return a.clientOrder - b.clientOrder;
+    if (st.tier) {                                        // nivel 0 = primero (piso), 1 = intermedio, 2 = al final (encima / huecos)
+      const ta = st.tier.has(a.id) ? st.tier.get(a.id) : 1, tb = st.tier.has(b.id) ? st.tier.get(b.id) : 1;
+      if (ta !== tb) return ta - tb;
+    }
+    if (st.cls !== 'mezcla' && a.stackable !== b.stackable) return (st.cls === 'rigidas') === a.stackable ? 1 : -1;
+    const ka = kOf(a), kb = kOf(b);
+    if (Math.abs(ka - kb) > 1e-9) return kb - ka;
+    if (Math.abs(a.area - b.area) > 1e-9) return b.area - a.area;
+    if (Math.abs(a.h - b.h) > 1e-9) return b.h - a.h;
+    if (a.kg !== b.kg) return b.kg - a.kg;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;       // mantiene juntas las cajas del mismo tipo
+  });
+}
+
+/** Reparte toda la carga en tantos contenedores como haga falta, con una estrategia dada. */
+function planWith(items, cont, groupByClient, st) {
+  let remaining = sortItems(items.slice(), groupByClient, st);
+  const containers = [];
+  while (remaining.length && containers.length < 200) {
+    const r = packContainer(remaining, cont, st.ep, st.pick);
+    if (!r.placed.length) break;                         // seguridad: nada más se puede ubicar
+    containers.push(r);
+    remaining = r.unplaced;
+  }
+  const plan = { containers, leftover: remaining, strategy: st };
+  // Rescate: intenta meter las pocas cajas del último contenedor en los huecos de los anteriores
+  while (plan.containers.length > 1 && rescueLast(plan, cont, Date.now() + 250)) { /* un contenedor menos */ }
+  return plan;
+}
+
+/**
+ * Ajuste exhaustivo: prueba TODAS las esquinas posibles (combinando las caras de las cajas ya puestas)
+ * en busca de un hueco que la lista de puntos extremos no vio. Es más lento, por eso solo se usa
+ * para rescatar las pocas cajas que quedan solas en el último contenedor.
+ */
+function exhaustiveFit(def, placed, cont) {
+  const xs = new Set([0]), ys = new Set([0]), zs = new Set([0]);
+  for (const b of placed) {
+    xs.add(+b.x2.toFixed(4)); ys.add(+b.y2.toFixed(4)); zs.add(+b.z2.toFixed(4));
+    if (b.def.stackable) ys.add(+b.y2.toFixed(4));
+  }
+  const X = [...xs].sort((a, b) => a - b), Y = [...ys].sort((a, b) => a - b), Z = [...zs].sort((a, b) => a - b);
+  for (const y of Y) {
+    for (const x of X) {
+      for (const z of Z) {
+        for (const o of def.orients) {
+          if (x + o.dx > cont.L + EPS || y + o.dy > cont.H + EPS || z + o.dz > cont.W + EPS) continue;
+          if (canPlace(x, y, z, o, placed) !== 0) continue;
+          const pos = compact({ x, y, z }, o, placed);
+          return { x: pos.x, y: pos.y, z: pos.z, o };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Intenta vaciar el último contenedor metiendo sus cajas en los huecos de los anteriores.
+ * Es "todo o nada": si alguna caja no entra, se deshace y el plan queda como estaba.
+ * Devuelve true si logró eliminar un contenedor.
+ */
+function rescueLast(plan, cont, deadline) {
+  const cs = plan.containers;
+  if (cs.length < 2 || plan.leftover.length) return false;
+  const last = cs[cs.length - 1];
+  if (last.placed.length > 150) return false;
+  const items = last.placed.map(b => b.def).sort((a, b) => (b.l * b.w * b.h) - (a.l * a.w * a.h));
+  const moved = [];
+  let ok = true;
+  for (const def of items) {
+    let done = false;
+    for (let ci = 0; ci < cs.length - 1 && !done; ci++) {
+      const c = cs[ci];
+      if (c.weight + def.kg > cont.maxKg + EPS) continue;
+      if (Date.now() > deadline) { ok = false; break; }
+      const pos = exhaustiveFit(def, c.placed, cont);
+      if (!pos) continue;
+      const box = {
+        x: pos.x, y: pos.y, z: pos.z, dx: pos.o.dx, dy: pos.o.dy, dz: pos.o.dz,
+        x2: pos.x + pos.o.dx, y2: pos.y + pos.o.dy, z2: pos.z + pos.o.dz, def
+      };
+      c.placed.push(box); c.weight += def.kg; c.volume += box.dx * box.dy * box.dz;
+      moved.push({ c, box }); done = true;
+    }
+    if (!done) { ok = false; break; }
+  }
+  if (!ok) {                                           // deshacer
+    for (const m of moved) {
+      const i = m.c.placed.lastIndexOf(m.box);
+      if (i >= 0) m.c.placed.splice(i, 1);
+      m.c.weight -= m.box.def.kg; m.c.volume -= m.box.dx * m.box.dy * m.box.dz;
+    }
+    return false;
+  }
+  cs.pop();
+  return true;
+}
+
+/** Puntaje de un plan: menos contenedores primero; a igualdad, el último lo más vacío posible. */
+function planScore(plan) {
+  const n = plan.containers.length, last = n ? plan.containers[n - 1].volume : 0;
+  return plan.leftover.length * 1e12 + n * 1e6 + last;
+}
+
+/**
+ * Plan final. Prueba muchas disposiciones distintas (órdenes de carga, armado por capas o por muros
+ * y variaciones aleatorias) y conserva la que use MENOS contenedores. Se detiene al alcanzar el mínimo
+ * teórico (por volumen o por peso) o al agotar el tiempo disponible.
+ *   opts.budgetMs  tiempo máximo de búsqueda (por defecto 1500 ms)
+ */
+function planLoad(items, cont, groupByClient, opts) {
+  const budget = (opts && opts.budgetMs) || 1500, t0 = Date.now(), lb = lowerBound(items, cont);
+  let best = null, bestScore = Infinity, tried = 0, worst = 0;
+  for (const st of buildVariants(items)) {
+    const a0 = Date.now();
+    const plan = planWith(items, cont, groupByClient, st);
+    worst = Math.max(worst, Date.now() - a0); tried++;
+    const sc = planScore(plan);
+    if (sc < bestScore) { best = plan; bestScore = sc; }
+    if (!best.leftover.length && best.containers.length <= lb) break;      // ya es el mínimo teórico
+    if (Date.now() - t0 + worst * 1.2 > budget) break;                     // sin tiempo para otro intento
+  }
+  best.tried = tried; best.lowerBound = lb;
+  return best;
+}
+
+/** Mínimo teórico de contenedores según volumen y peso totales. */
+function lowerBound(defs, cont) {
+  let vol = 0, kg = 0;
+  for (const d of defs) { vol += d.l * d.w * d.h; kg += d.kg; }
+  return Math.max(1, Math.ceil(vol / (cont.L * cont.W * cont.H) - 1e-9), Math.ceil(kg / cont.maxKg - 1e-9));
+}
+
+/** Puntaje de un plan (menor es mejor): menos contenedores, y a igualdad el último lo más vacío posible. */
+function scorePlan(plan) { return planScore(plan); }
+
+/**
+ * Variantes de armado que se van probando (generador: se piden una a una).
+ * Primero las deterministas más prometedoras (capas o muros, distintos órdenes y criterios de encaje)
+ * y luego variaciones aleatorias con semilla fija, para que los mismos datos den siempre el mismo resultado.
+ */
+function* buildVariants(defs) {
+  for (const pick of ['ancho', 'contacto'])
+    for (const ep of ['layer', 'wall']) {
+      for (const cls of ['apilables', 'mezcla', 'rigidas']) yield { cls, key: 'area', ep, pick, noise: null };
+      for (const cls of ['apilables', 'mezcla']) {
+        yield { cls, key: 'alto', ep, pick, noise: null };
+        yield { cls, key: 'vol', ep, pick, noise: null };
+      }
+    }
+  const types = [...new Set(defs.map(d => d.id))];
+  let vol = 0;
+  for (const d of defs) vol += d.l * d.w * d.h;
+
+  // Variantes con reparto por niveles: las cargas NO apilables grandes se ubican primero en el piso,
+  // las apilables después, y las NO apilables pequeñas al final para que queden ENCIMA de las apilables.
+  const byType = new Map();
+  defs.forEach(d => byType.set(d.id, d));
+  const stk = [...byType.values()].filter(d => d.stackable);
+  const avgStk = stk.length ? stk.reduce((s, d) => s + d.area, 0) / stk.length : 0;
+  const tierBig = new Map();
+  byType.forEach((d, id) => { if (!d.stackable) tierBig.set(id, d.area >= avgStk ? 0 : 2); });
+  if (tierBig.size) {
+    for (const pick of ['ancho', 'contacto'])
+      for (const ep of ['layer', 'wall'])
+        for (const key of ['area', 'alto', 'vol']) yield { cls: 'mezcla', key, ep, pick, noise: null, tier: tierBig };
+  }
+
+  const rng = makeRng(defs.length * 7919 + types.length * 104729 + Math.round(vol * 1000));
+  for (let i = 0; i < 5000; i++) {
+    const noise = new Map(), amp = 0.15 + rng() * 0.6;
+    types.forEach(id => noise.set(id, 1 + (rng() - 0.5) * amp));
+    let tier = null;
+    const mode = rng();
+    if (types.length > 1 && mode < 0.45) {                 // orden completamente aleatorio de los tipos de carga
+      const order = types.slice().sort(() => rng() - 0.5);
+      tier = new Map(order.map((id, k) => [id, k]));
+    } else if (tierBig.size && mode < 0.75) {              // reparto aleatorio de las no apilables entre piso y capa superior
+      tier = new Map();
+      byType.forEach((d, id) => { if (!d.stackable) tier.set(id, rng() < 0.5 ? 0 : 2); });
+    }
+    yield {
+      tier,
+      cls: tier ? 'mezcla' : ['apilables', 'mezcla', 'rigidas'][Math.floor(rng() * 3)],
+      key: ['area', 'alto', 'vol'][Math.floor(rng() * 3)],
+      ep: rng() < 0.5 ? 'layer' : 'wall',
+      pick: rng() < 0.5 ? 'ancho' : 'contacto', noise
+    };
+  }
+}
+
+/**
+ * Verificación independiente: vuelve a comprobar cada caja contra las reglas físicas
+ * (dentro del contenedor, sin superposiciones, sin nada sobre cargas no apilables,
+ * apoyo mínimo de la base y peso máximo). Devuelve { ok, errors }.
+ */
+function verifyPlan(containers, cont) {
+  const E = 1e-6, errors = [];
+  let outside = 0, coll = 0, onNoStack = 0, unsup = 0, over = 0;
+  containers.forEach(c => {
+    const P = c.placed; let w = 0;
+    P.forEach((b, i) => {
+      w += b.def.kg;
+      if (b.x < -E || b.y < -E || b.z < -E || b.x2 > cont.L + E || b.y2 > cont.H + E || b.z2 > cont.W + E) outside++;
+      let sup = 0, bad = false;
+      for (let j = 0; j < P.length; j++) {
+        if (j === i) continue;
+        const q = P[j];
+        const ox = Math.min(b.x2, q.x2) - Math.max(b.x, q.x), oz = Math.min(b.z2, q.z2) - Math.max(b.z, q.z);
+        if (ox > E && oz > E) {
+          if (j > i && Math.min(b.y2, q.y2) - Math.max(b.y, q.y) > E) coll++;
+          if (b.y > E && Math.abs(q.y2 - b.y) <= E) { sup += ox * oz; if (!q.def.stackable) bad = true; }
+        }
+      }
+      if (bad) onNoStack++;
+      if (b.y > E && sup < MIN_SUPPORT * b.dx * b.dz - E) unsup++;
+    });
+    if (w > cont.maxKg + E) over++;
+  });
+  if (outside) errors.push(`${outside} caja(s) salen del contenedor.`);
+  if (coll) errors.push(`${coll} cruce(s) entre cajas.`);
+  if (onNoStack) errors.push(`${onNoStack} caja(s) sobre carga no apilable.`);
+  if (unsup) errors.push(`${unsup} caja(s) sin apoyo suficiente.`);
+  if (over) errors.push(`${over} contenedor(es) superan el peso máximo.`);
+  return { ok: errors.length === 0, errors };
+}
+/*==PACKER_END==*/
+</script>
+
+
+<!-- =====================================================================
+     APLICACIÓN: estado, interfaz, KPIs y escena 3D
+     ===================================================================== -->
+<script>
+(() => {
+'use strict';
+
+/* ---------- Utilidades ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (n, d = 2) => Number(n).toLocaleString('es', { minimumFractionDigits: d, maximumFractionDigits: d });
+const num = v => (Number.isFinite(+v) && v !== '' ? +v : 0);
+const letter = n => (n >= 26 ? letter(Math.floor(n / 26) - 1) : '') + String.fromCharCode(65 + (n % 26));
+const ordinal = n => ['', 'primero', 'segundo', 'tercero', 'cuarto', 'quinto', 'sexto', 'séptimo', 'octavo', 'noveno', 'décimo'][n] || ('n.º ' + n);
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const x = v => Math.round(255 * v).toString(16).padStart(2, '0');
+  return '#' + x(f(0)) + x(f(8)) + x(f(4));
+}
+/** Color brillante único por cliente: el ángulo áureo separa bien los tonos sucesivos. */
+const colorFor = i => hslToHex((i * 137.508 + 12) % 360, 88, 56);
+
+/* ---------- Catálogo de contenedores (dimensiones internas reales, en metros) ---------- */
+const CONTAINERS = {
+  '20ST': { label: "20' Standard",  short: "20' ST", L: 5.90,  W: 2.35, H: 2.39, maxKg: 28200, teorico: 33.2 },
+  '40ST': { label: "40' Standard",  short: "40' ST", L: 12.03, W: 2.35, H: 2.39, maxKg: 26700, teorico: 67.0 },
+  '40HC': { label: "40' High Cube", short: "40' HC", L: 12.03, W: 2.35, H: 2.69, maxKg: 26500, teorico: 76.0 },
+  '45HC': { label: "45' High Cube", short: "45' HC", L: 13.56, W: 2.35, H: 2.69, maxKg: 25600, teorico: 86.0 }
+};
+const contVolume = c => c.L * c.W * c.H;
+
+/* ---------- Estado ---------- */
+const state = {
+  clients: [], clientSeq: 0, cargoSeq: 0,
+  results: null, currentIdx: 0,
+  hidden: new Set()                // clientes ocultos en el visor
+};
+
+/* =====================================================================
+   1. GESTIÓN DE CLIENTES Y CARGAS
+   ===================================================================== */
+function addClient() {
+  const i = state.clientSeq++;
+  const c = { id: 'c' + i, name: 'Cliente ' + letter(i), color: colorFor(i), cargos: [] };
+  state.clients.push(c);
+  return c;
+}
+function addCargo(client, preset = {}) {
+  const g = Object.assign({ id: 'g' + (++state.cargoSeq), name: '', l: '', w: '', h: '', unit: 'cm', qty: 1, kg: '', stackable: true, rot3: false }, preset);
+  client.cargos.push(g);
+  return g;
+}
+function loadExample() {
+  state.clients = []; state.clientSeq = 0; state.hidden.clear();
+  const a = addClient(), b = addClient(), c = addClient();
+  addCargo(a, { name: 'Cajas de ropa',          l: 80,  w: 60,  h: 50,  qty: 120, kg: 14,  stackable: true });
+  addCargo(a, { name: 'Pallet de maquinaria',   l: 120, w: 100, h: 110, qty: 8,   kg: 380, stackable: false });
+  addCargo(b, { name: 'Electrodomésticos',      l: 60,  w: 50,  h: 45,  qty: 220, kg: 11,  stackable: true });
+  addCargo(b, { name: 'Cajas frágiles (vidrio)', l: 50,  w: 40,  h: 40,  qty: 90,  kg: 7,   stackable: false });
+  addCargo(c, { name: 'Repuestos',              l: 40,  w: 30,  h: 30,  qty: 150, kg: 8,   stackable: true });
+}
+
+/* ---------- Dibujo del panel izquierdo ---------- */
+const numField = (f, label, val, step = 'any') =>
+  `<div><label class="lbl">${label}</label><input type="number" inputmode="decimal" min="0" step="${step}" data-f="${f}" class="inp" value="${val === '' ? '' : val}"></div>`;
+
+function cargoHTML(g) {
+  return `<div class="cargo" data-cargo="${g.id}">
+    <div class="flex items-center gap-2">
+      <input data-f="name" class="inp" placeholder="Nombre / descripción de la caja" value="${esc(g.name)}" aria-label="Descripción de la caja">
+      <button class="ico" data-act="del-cargo" type="button" title="Quitar este tipo de carga" aria-label="Quitar este tipo de carga">✕</button>
+    </div>
+    <div class="grid grid-cols-4 gap-2 mt-2">
+      ${numField('l', 'Largo', g.l)}${numField('w', 'Ancho', g.w)}${numField('h', 'Alto', g.h)}
+      <div><label class="lbl">Unidad</label>
+        <select data-f="unit" class="inp">
+          <option value="cm" ${g.unit === 'cm' ? 'selected' : ''}>cm</option>
+          <option value="m" ${g.unit === 'm' ? 'selected' : ''}>m</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-2 mt-2">
+      ${numField('qty', 'Cantidad de cajas', g.qty, '1')}${numField('kg', 'Peso por caja (kg)', g.kg)}
+    </div>
+    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+      <label class="chk"><input type="checkbox" data-f="stackable" ${g.stackable ? 'checked' : ''}> ¿Es apilable / remontable?</label>
+      <label class="chk"><input type="checkbox" data-f="rot3" ${g.rot3 ? 'checked' : ''}> Se puede voltear (acostar/parar)</label>
+    </div>
+  </div>`;
+}
+function clientHTML(c) {
+  return `<section class="client" data-client="${c.id}" style="--c:${c.color}">
+    <div class="flex items-center gap-2">
+      <input type="color" class="swatch" data-f="color" value="${c.color}" title="Color de este cliente en el visor 3D" aria-label="Color del cliente">
+      <input data-f="name" class="inp" style="font-weight:600;font-size:14px" value="${esc(c.name)}" aria-label="Nombre del cliente">
+      <button class="ico" data-act="del-client" type="button" title="Eliminar cliente" aria-label="Eliminar cliente">✕</button>
+    </div>
+    <div class="mt-2 space-y-2">${c.cargos.map(cargoHTML).join('')}</div>
+    <button class="btn-ghost mt-2" data-act="add-cargo" type="button">+ Agregar tipo de carga</button>
+  </section>`;
+}
+function renderClients() {
+  $('clients').innerHTML = state.clients.length
+    ? state.clients.map(clientHTML).join('')
+    : `<p class="p-4 text-sm text-steel">Aún no hay clientes. Agrega uno para empezar o carga el ejemplo.</p>`;
+}
+
+/* ---------- Eventos del panel izquierdo (delegación) ---------- */
+function onFieldInput(e) {
+  const t = e.target, f = t.dataset.f;
+  if (!f) return;
+  const cEl = t.closest('[data-client]');
+  const c = cEl && state.clients.find(x => x.id === cEl.dataset.client);
+  if (!c) return;
+  const v = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.value === '' ? '' : parseFloat(t.value)) : t.value;
+  const gEl = t.closest('[data-cargo]');
+  if (gEl) {
+    const g = c.cargos.find(x => x.id === gEl.dataset.cargo);
+    if (!g) return;
+    g[f] = v;
+    if (f !== 'name') markDirty();
+  } else {
+    c[f] = v;
+    if (f === 'color') { cEl.style.setProperty('--c', v); recolor(c.id); }
+  }
+  renderKPIs(); renderLegend();
+}
+$('clients').addEventListener('input', onFieldInput);
+$('clients').addEventListener('change', onFieldInput);
+
+$('clients').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const cEl = btn.closest('[data-client]');
+  const c = state.clients.find(x => x.id === cEl.dataset.client);
+  if (!c) return;
+  const act = btn.dataset.act;
+  if (act === 'add-cargo') { addCargo(c); renderClients(); markDirty(); }
+  if (act === 'del-cargo') { const gid = btn.closest('[data-cargo]').dataset.cargo; c.cargos = c.cargos.filter(g => g.id !== gid); renderClients(); markDirty(); }
+  if (act === 'del-client') { state.clients = state.clients.filter(x => x.id !== c.id); renderClients(); markDirty(); }
+  renderKPIs(); renderLegend();
+});
+
+$('btnAddClient').addEventListener('click', () => {
+  const c = addClient(); addCargo(c);
+  renderClients(); markDirty(); renderKPIs();
+  const el = document.querySelector(`[data-client="${c.id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+});
+$('btnExample').addEventListener('click', () => { loadExample(); renderClients(); markDirty(); renderKPIs(); renderLegend(); });
+$('btnClear').addEventListener('click', () => { state.clients = []; state.clientSeq = 0; state.hidden.clear(); renderClients(); markDirty(); renderKPIs(); renderLegend(); });
+
+/* ---------- Contenedor seleccionado ---------- */
+function fillContainerSelect() {
+  $('contSel').innerHTML = Object.entries(CONTAINERS).map(([k, c]) =>
+    `<option value="${k}" ${k === '40HC' ? 'selected' : ''}>${c.label} — ${c.L.toFixed(2)} × ${c.W.toFixed(2)} × ${c.H.toFixed(2)} m</option>`).join('');
+  $('maxKg').value = CONTAINERS['40HC'].maxKg;
+}
+function getCont() {
+  const k = $('contSel').value, base = CONTAINERS[k], mk = parseFloat($('maxKg').value);
+  return Object.assign({ key: k }, base, { maxKg: mk > 0 ? mk : base.maxKg });
+}
+function updateContInfo() {
+  const c = getCont();
+  $('contInfo').innerHTML = `Interior: <b>${c.L.toFixed(2)} × ${c.W.toFixed(2)} × ${c.H.toFixed(2)} m</b> (largo × ancho × alto). Capacidad ${fmt(contVolume(c), 1)} CBM calculada por sus medidas; referencia comercial ≈ ${fmt(c.teorico, 1)} CBM.`;
+}
+$('contSel').addEventListener('change', () => {
+  $('maxKg').value = CONTAINERS[$('contSel').value].maxKg;
+  updateContInfo();
+  if (!state.results) previewContainer();
+  markDirty(); renderKPIs();
+});
+$('maxKg').addEventListener('input', () => { markDirty(); renderKPIs(); });
+$('groupClient').addEventListener('change', markDirty);
+
+/* Recálculo automático: cualquier cambio de cantidades, medidas, pesos, clientes o contenedor
+   vuelve a calcular solo, tras una breve pausa para no recalcular en cada tecla. */
+let calcTimer = null, calcToken = 0;
+function setBadge(text) {
+  const b = $('dirtyBadge');
+  if (text) { b.textContent = text; b.classList.remove('hidden'); } else b.classList.add('hidden');
+}
+function markDirty() {
+  calcToken++;                                   // cancela cualquier cálculo en curso
+  clearTimeout(calcTimer);
+  setBadge('Recalculando…');
+  calcTimer = setTimeout(() => calculate(true), 450);
+}
+
+/* =====================================================================
+   2. CÁLCULO: convierte el formulario en cajas y llama al motor de empaquetado
+   ===================================================================== */
+function buildDefs(cont) {
+  const defs = [], problems = [], rejected = [];
+  state.clients.forEach((c, ci) => {
+    c.cargos.forEach(g => {
+      const qty = Math.floor(num(g.qty));
+      if (qty <= 0) return;
+      const f = g.unit === 'm' ? 1 : 0.01;
+      const l = num(g.l) * f, w = num(g.w) * f, h = num(g.h) * f;
+      const label = `${c.name} · ${g.name || 'carga sin nombre'}`;
+      if (!(l > 0) && !(w > 0) && !(h > 0)) return;          // fila todavía sin medidas: se ignora
+      if (!(l > 0 && w > 0 && h > 0)) { problems.push(`${label}: completa largo, ancho y alto.`); return; }
+      const def = {
+        id: g.id, clientId: c.id, clientOrder: ci, cargoName: g.name || 'Carga sin nombre',
+        l, w, h, kg: Math.max(0, num(g.kg)), stackable: !!g.stackable, rot3: !!g.rot3, qty
+      };
+      def.area = def.rot3 ? Math.max(l * w, l * h, w * h) : l * w;
+      def.orients = orientationsFor(def, cont);
+      if (!def.orients.length) { rejected.push({ def, qty, reason: 'sus medidas no caben dentro del contenedor' }); return; }
+      if (def.kg > cont.maxKg) { rejected.push({ def, qty, reason: 'una sola caja supera el peso máximo' }); return; }
+      for (let i = 0; i < qty; i++) defs.push(def);
+    });
+  });
+  return { defs, problems, rejected };
+}
+
+/** Publica un plan como resultado visible (KPIs, pestañas y escena 3D). */
+function publish(plan, cont, defs, rejected, lb, t0) {
+  const rej = rejected.slice();
+  const left = new Map();
+  plan.leftover.forEach(d => left.set(d, (left.get(d) || 0) + 1));
+  left.forEach((qty, def) => rej.push({ def, qty, reason: 'no se pudo ubicar con las restricciones dadas' }));
+  const placedVol = plan.containers.reduce((sum, c) => sum + c.volume, 0);
+  const declaredVol = defs.reduce((sum, d) => sum + d.l * d.w * d.h, 0) + rejected.reduce((sum, r) => sum + r.def.l * r.def.w * r.def.h * r.qty, 0);
+  const unplacedVol = [...left].reduce((sum, [d, q]) => sum + d.l * d.w * d.h * q, 0) + rejected.reduce((sum, r) => sum + r.def.l * r.def.w * r.def.h * r.qty, 0);
+  state.results = {
+    cont, containers: plan.containers, rejected: rej,
+    boxes: defs.length - plan.leftover.length,
+    lb, ms: performance.now() - t0,
+    check: {
+      geom: verifyPlan(plan.containers, cont),
+      declaredVol, placedVol, unplacedVol,
+      volOk: Math.abs(declaredVol - placedVol - unplacedVol) < 1e-6
+    }
+  };
+  state.currentIdx = Math.min(state.currentIdx, Math.max(0, plan.containers.length - 1));
+  showContainer(state.currentIdx);
+}
+
+async function calculate(auto = false) {
+  clearTimeout(calcTimer);
+  const token = ++calcToken;
+  const msg = $('msg'), btn = $('btnCalc');
+  btn.disabled = false; btn.textContent = 'Calcular cubicaje';
+  msg.innerHTML = '';
+  const cont = getCont();
+  const { defs, problems, rejected } = buildDefs(cont);
+
+  if (problems.length) {
+    msg.innerHTML = `<span class="text-red-700">${problems.map(esc).join('<br>')}</span>`;
+    setBadge('Datos incompletos: el resultado mostrado es el anterior');
+    return;
+  }
+  if (!defs.length && !rejected.length) {           // no hay carga: se vacía el resultado
+    state.results = null;
+    renderTabs(); renderKPIs(); previewContainer();
+    setBadge(null);
+    msg.innerHTML = auto ? '' : '<span class="text-red-700">Agrega al menos un tipo de carga con medidas y cantidad.</span>';
+    return;
+  }
+  if (defs.length > 6000) {
+    msg.innerHTML = '<span class="text-red-700">Son más de 6.000 cajas: agrúpalas en bultos o pallets para calcular.</span>';
+    setBadge(null);
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Calculando…'; setBadge('Recalculando…');
+  const t0 = performance.now(), group = $('groupClient').checked, lb = lowerBound(defs, cont);
+  let best = null, bestScore = Infinity, tried = 0;
+  try {
+    for (const v of buildVariants(defs)) {
+      await new Promise(r => setTimeout(r, 0));     // cede el hilo para que la pantalla no se congele
+      if (token !== calcToken) return;              // llegó un cambio nuevo: se descarta este cálculo
+      const plan = planWith(defs, cont, group, v);
+      tried++;
+      const sc = scorePlan(plan);
+      if (sc < bestScore) { best = plan; bestScore = sc; publish(best, cont, defs, rejected, lb, t0); }   // muestra ya la mejor opción hallada
+      if (!plan.leftover.length && plan.containers.length <= lb) break;      // ya es el mínimo teórico: no hay nada que mejorar
+      if (performance.now() - t0 > 1500) break;                            // tope de tiempo (sigue buscando llenar más el primero)
+    }
+    if (token !== calcToken) return;
+    if (best) publish(best, cont, defs, rejected, lb, t0);
+    const n = state.results.containers.length;
+    msg.innerHTML = `<span class="text-marine font-semibold">${state.results.boxes} cajas ubicadas en ${n} contenedor${n === 1 ? '' : 'es'}. Se probaron ${tried} formas de acomodarlas.</span>`;
+  } catch (err) {
+    console.error(err);
+    msg.innerHTML = '<span class="text-red-700">Ocurrió un error durante el cálculo. Revisa los datos e inténtalo de nuevo.</span>';
+  } finally {
+    if (token === calcToken) { btn.disabled = false; btn.textContent = 'Calcular cubicaje'; setBadge(null); }
+  }
+}
+$('btnCalc').addEventListener('click', () => calculate(false));
+
+/* =====================================================================
+   3. PESTAÑAS Y ESTADÍSTICAS (KPIs)
+   ===================================================================== */
+function renderTabs() {
+  const el = $('tabs'), res = state.results;
+  if (!res) { el.innerHTML = '<span class="text-sm text-steel py-1.5">Configura la carga y pulsa «Calcular cubicaje».</span>'; return; }
+  const vol = contVolume(res.cont);
+  el.innerHTML = res.containers.map((c, i) =>
+    `<button class="tab ${i === state.currentIdx ? 'tab-on' : ''}" data-tab="${i}" type="button">Contenedor ${i + 1}<span>${fmt(c.volume / vol * 100, 0)} % · ${fmt(c.weight, 0)} kg</span></button>`).join('');
+}
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (b) showContainer(+b.dataset.tab);
+});
+
+function declared() {
+  const rows = state.clients.map(c => {
+    let boxes = 0, cbm = 0, kg = 0;
+    c.cargos.forEach(g => {
+      const q = Math.max(0, Math.floor(num(g.qty))), f = g.unit === 'm' ? 1 : 0.01;
+      boxes += q; cbm += q * num(g.l) * f * num(g.w) * f * num(g.h) * f; kg += q * num(g.kg);
+    });
+    return { c, boxes, cbm, kg };
+  });
+  return { rows, boxes: rows.reduce((s, r) => s + r.boxes, 0), cbm: rows.reduce((s, r) => s + r.cbm, 0), kg: rows.reduce((s, r) => s + r.kg, 0) };
+}
+function recommendation(res) {
+  const n = res.containers.length, cont = res.cont, vol = contVolume(cont);
+  if (!n) return { tone: 'bad', main: 'No se pudo ubicar ninguna caja.', sub: 'Revisa medidas y pesos.' };
+  const last = res.containers[n - 1], pct = last.volume / vol * 100;
+  const avg = res.containers.slice(0, -1).reduce((s, c) => s + c.volume / vol * 100, 0) / Math.max(1, n - 1);
+  const byWeight = res.containers.slice(0, -1).some(c => c.weight >= cont.maxKg * 0.95);
+  if (n === 1) return { tone: 'ok', main: `Toda la carga cabe en 1 contenedor de ${cont.short}.`, sub: `Ocupa el ${fmt(pct, 0)} % del volumen.` };
+  const full = n - 1;
+  return {
+    tone: 'warn',
+    main: `Necesitas ${full} contenedor${full > 1 ? 'es' : ''} de ${cont.short} ${full > 1 ? 'enteros' : 'entero'} y un ${fmt(pct, 0)} % del ${ordinal(n)}.`,
+    sub: `Total: ${n} contenedores (${n - 1} adicional${n - 1 > 1 ? 'es' : ''} al primero). Los primeros se llenan en promedio al ${fmt(avg, 0)} % del volumen${byWeight ? '; el peso máximo limita el llenado' : ''}.`
+  };
+}
+
+const bar = (pct, color) => `<div class="bar"><div style="width:${Math.min(100, Math.max(0, pct))}%;background:${color}"></div></div>`;
+const stat = (k, v) => `<div><div class="text-[11.5px] text-steel">${k}</div><div class="num text-xl leading-tight">${v}</div></div>`;
+
+function clientInfo(id) { return state.clients.find(c => c.id === id); }
+
+function renderKPIs() {
+  const dec = declared(), cont = getCont(), vol = contVolume(cont), res = state.results;
+  let html = '';
+
+  /* --- Recomendación (solo tras calcular) --- */
+  if (res) {
+    const r = recommendation(res);
+    const tones = { ok: ['#e6f4ef', '#0f766e'], warn: ['#fff4dc', '#b45309'], bad: ['#fde8e6', '#b42318'] }[r.tone];
+    html += `<section class="p-4 border-b border-line" style="background:${tones[0]}">
+      <div class="font-cond text-[19px] font-semibold leading-snug" style="color:${tones[1]}">${esc(r.main)}</div>
+      <div class="text-[12.5px] mt-1 text-ink/80 leading-snug">${esc(r.sub)}</div>
+    </section>`;
+
+    /* --- Contenedor que se está viendo --- */
+    const c = res.containers[state.currentIdx];
+    if (c) {
+      const eff = c.volume / vol * 100, wp = c.weight / res.cont.maxKg * 100;
+      const wcol = wp > 100 ? '#b42318' : wp > 90 ? '#d97706' : '#0f766e';
+      html += `<section class="p-4 border-b border-line">
+        <h3 class="sec-title mb-2">Contenedor ${state.currentIdx + 1} de ${res.containers.length}</h3>
+        <div class="flex items-end justify-between"><div class="text-[12.5px] text-steel">Volumen ocupado</div>
+          <div class="num text-xl">${fmt(c.volume)} <span class="text-sm text-steel">de ${fmt(vol)} CBM</span></div></div>
+        ${bar(eff, '#0e7490')}
+        <div class="text-[12.5px] mt-1 mb-3">Eficiencia de espacio: <b>${fmt(eff, 1)} %</b> · ${c.placed.length} cajas</div>
+        <div class="flex items-end justify-between"><div class="text-[12.5px] text-steel">Peso de la carga</div>
+          <div class="num text-xl">${fmt(c.weight, 0)} <span class="text-sm text-steel">de ${fmt(res.cont.maxKg, 0)} kg</span></div></div>
+        ${bar(wp, wcol)}
+        <div class="text-[12.5px] mt-1">${fmt(wp, 1)} % del peso máximo permitido</div>
+      </section>`;
+    }
+
+    /* --- Totales de todos los contenedores --- */
+    const tv = res.containers.reduce((s, x) => s + x.volume, 0), tw = res.containers.reduce((s, x) => s + x.weight, 0);
+    html += `<section class="p-4 border-b border-line">
+      <h3 class="sec-title mb-2">Total de la consolidación</h3>
+      <div class="grid grid-cols-3 gap-2">${stat('Contenedores', res.containers.length)}${stat('CBM cargados', fmt(tv))}${stat('Peso (kg)', fmt(tw, 0))}</div>
+      <div class="text-[12.5px] mt-2">Eficiencia media: <b>${fmt(tv / (vol * Math.max(1, res.containers.length)) * 100, 1)} %</b> · cálculo en ${fmt(res.ms, 0)} ms</div>
+    </section>`;
+
+    /* --- Verificación del cubicaje --- */
+    const ck = res.check, nUsed = res.containers.length, dens = tv / (vol * Math.max(1, nUsed)) * 100;
+    const ok = t => `<span style="color:#0f766e;font-weight:600">✓</span> ${t}`, bad = t => `<span style="color:#b42318;font-weight:600">✗</span> ${t}`;
+    html += `<section class="p-4 border-b border-line">
+      <h3 class="sec-title mb-2">Verificación del cubicaje</h3>
+      <ul class="text-[12.5px] leading-snug space-y-1.5">
+        <li>${ck.volOk ? ok(`Volumen: ${fmt(ck.declaredVol)} CBM declarados = ${fmt(ck.placedVol)} cargados + ${fmt(ck.unplacedVol)} sin cargar.`) : bad('El volumen cargado no coincide con el declarado.')}</li>
+        <li>${ck.geom.ok ? ok('Acomodo: ninguna caja se cruza con otra ni sale del contenedor, nada va sobre cajas no apilables y cada caja elevada tiene apoyo.') : bad(esc(ck.geom.errors.join(' ')))}</li>
+        <li>Mínimo teórico: <b>${res.lb}</b> contenedor${res.lb > 1 ? 'es' : ''} por volumen y peso. Usados: <b>${nUsed}</b>.</li>
+        ${(() => {
+          let ns = 0;
+          res.containers.forEach(c => c.placed.forEach(b => { if (!b.def.stackable) ns += b.dx * b.dz; }));
+          const fl = res.cont.L * res.cont.W, pct = ns / fl * 100;
+          return nUsed > res.lb && pct >= 40
+            ? `<li class="text-steel">Las cargas no apilables suman ${fmt(ns, 1)} m² de base (${fmt(pct, 0)} % del piso de un contenedor). Como nada puede ir encima, esa superficie no se reaprovecha hacia arriba. Si alguna sí admite apilarse, márcala como apilable y se compactará más.</li>` : '';
+        })()}
+        ${nUsed > res.lb ? `<li class="text-steel">Con ${fmt(dens, 0)} % de llenado medio no alcanza a bajar de ${nUsed}: entre cajas quedan huecos y las no apilables no dejan aprovechar el espacio de arriba.</li>` : ''}
+      </ul>
+      <p class="text-[11.5px] text-steel mt-2 leading-snug">CBM de cada caja = largo × ancho × alto en metros, sin importar cómo se gire. Eficiencia = CBM cargados ÷ volumen interior del contenedor.</p>
+    </section>`;
+
+    if (res.rejected.length) {
+      html += `<section class="p-4 border-b border-line" style="background:#fde8e6">
+        <h3 class="sec-title mb-1" style="color:#b42318">Carga que no se pudo cargar</h3>
+        <ul class="text-[12.5px] leading-snug space-y-1">${res.rejected.map(r => {
+          const cl = clientInfo(r.def.clientId);
+          return `<li><b>${r.qty} × ${esc(r.def.cargoName)}</b>${cl ? ' (' + esc(cl.name) + ')' : ''}: ${esc(r.reason)}.</li>`;
+        }).join('')}</ul></section>`;
+    }
+  }
+
+  /* --- Carga declarada (se actualiza en vivo al escribir) --- */
+  const minC = dec.cbm > 0 ? Math.ceil(dec.cbm / vol - 1e-9) : 0;
+  html += `<section class="p-4 border-b border-line">
+    <h3 class="sec-title mb-2">Carga declarada</h3>
+    <div class="grid grid-cols-3 gap-2">${stat('Cajas', fmt(dec.boxes, 0))}${stat('CBM', fmt(dec.cbm))}${stat('Peso (kg)', fmt(dec.kg, 0))}</div>
+    <div class="text-[12.5px] mt-2 text-steel leading-snug">Mínimo teórico por volumen: <b class="text-ink">${minC} × ${cont.short}</b> (sin contar huecos ni peso).${dec.kg > cont.maxKg ? ' El peso declarado supera el máximo de un contenedor.' : ''}</div>
+  </section>`;
+
+  /* --- Desglose por cliente --- */
+  const cur = res && res.containers[state.currentIdx];
+  const perCont = {}, perTotal = {};
+  if (res) {
+    res.containers.forEach((cc, i) => cc.placed.forEach(b => {
+      const v = b.dx * b.dy * b.dz;
+      perTotal[b.def.clientId] = (perTotal[b.def.clientId] || 0) + v;
+      if (i === state.currentIdx) perCont[b.def.clientId] = (perCont[b.def.clientId] || 0) + v;
+    }));
+  }
+  html += `<section class="p-4">
+    <h3 class="sec-title mb-2">Desglose de CBM por cliente</h3>
+    <table class="kt"><thead><tr><th>Cliente</th><th>${cur ? 'Cont. ' + (state.currentIdx + 1) : 'Declarado'}</th><th>${res ? 'Cargado' : 'Peso kg'}</th></tr></thead><tbody>
+    ${dec.rows.map(r => `<tr>
+      <td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${r.c.color};margin-right:6px"></span>${esc(r.c.name)}</td>
+      <td>${res ? fmt(perCont[r.c.id] || 0) : fmt(r.cbm)}</td>
+      <td>${res ? fmt(perTotal[r.c.id] || 0) : fmt(r.kg, 0)}</td></tr>`).join('') || '<tr><td colspan="3" class="text-steel">Sin clientes</td></tr>'}
+    </tbody></table>
+    ${res ? '<p class="text-[11.5px] text-steel mt-2">Cifras en CBM: «Cont.» es lo que va en el contenedor visible y «Cargado» el total en todos los contenedores.</p>' : ''}
+  </section>`;
+
+  $('kpis').innerHTML = html;
+}
+
+/* =====================================================================
+   4. ESCENA 3D (Three.js)
+   ===================================================================== */
+let renderer, scene, camera, controls, root = null, boxMeshes = [], own = [];
+let viewDims = { L: 12, W: 2.35, H: 2.69 }, fitKey = null;
+const matCache = new Map();
+let unitBox, unitEdges, edgeMat;
+
+function initThree() {
+  if (typeof THREE === 'undefined' || !THREE.OrbitControls) { $('glError').classList.remove('hidden'); return false; }
+  renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.78));
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.55); d1.position.set(10, 22, 14); scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0xffffff, 0.25); d2.position.set(-12, 8, -10); scene.add(d2);
+
+  const grid = new THREE.GridHelper(60, 60, 0x33475c, 0x243444);
+  grid.position.y = -0.02; scene.add(grid);
+
+  unitBox = new THREE.BoxGeometry(1, 1, 1);
+  unitEdges = new THREE.EdgesGeometry(unitBox);
+  edgeMat = new THREE.LineBasicMaterial({ color: 0x000000 });   // bordes negros finos entre cajas
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.01;                  // no permite pasar bajo el piso
+  controls.minDistance = 2; controls.maxDistance = 90;
+
+  new ResizeObserver(resize).observe($('viewport'));
+  resize();
+  (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+  return true;
+}
+function resize() {
+  const wrap = $('viewport'), w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!renderer || !w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+
+function getMat(clientId) {
+  if (!matCache.has(clientId)) {
+    const c = clientInfo(clientId);
+    matCache.set(clientId, new THREE.MeshLambertMaterial({ color: new THREE.Color(c ? c.color : '#9aa5b1') }));
+  }
+  return matCache.get(clientId);
+}
+function recolor(clientId) {
+  const m = matCache.get(clientId), c = clientInfo(clientId);
+  if (m && c) m.color.set(c.color);
+}
+
+function makeLabel(text) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+  const g = cv.getContext('2d');
+  g.font = '600 62px Barlow, Arial, sans-serif'; g.fillStyle = '#fca5a5'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 66);
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  own.push(tex, mat);
+  const s = new THREE.Sprite(mat); s.scale.set(2.6, 0.65, 1);
+  return s;
+}
+
+function clearRoot() {
+  if (root) scene.remove(root);
+  own.forEach(o => o.dispose && o.dispose());
+  own = []; boxMeshes = []; root = null;
+}
+
+/** Dibuja el contenedor (estructura alámbrica semitransparente) y las cajas ubicadas. */
+function buildScene(cont, placed) {
+  if (!renderer) return;
+  clearRoot();
+  viewDims = { L: cont.L, W: cont.W, H: cont.H };
+  root = new THREE.Group();
+  root.position.set(-cont.L / 2, 0, -cont.W / 2);       // centra el contenedor en el origen
+
+  const shell = new THREE.BoxGeometry(cont.L, cont.H, cont.W);
+  const faceMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
+  const wireGeo = new THREE.EdgesGeometry(shell);
+  const wireMat = new THREE.LineBasicMaterial({ color: 0xbae6fd });
+  const floorGeo = new THREE.PlaneGeometry(cont.L, cont.W);
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x0c1520, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+  const doorGeo = new THREE.PlaneGeometry(cont.W, cont.H);
+  const doorMat = new THREE.MeshBasicMaterial({ color: 0xf87171, transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false });
+  own.push(shell, faceMat, wireGeo, wireMat, floorGeo, floorMat, doorGeo, doorMat);
+
+  const faces = new THREE.Mesh(shell, faceMat); faces.position.set(cont.L / 2, cont.H / 2, cont.W / 2); faces.renderOrder = 2;
+  const wire = new THREE.LineSegments(wireGeo, wireMat); wire.position.copy(faces.position);
+  const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x = -Math.PI / 2; floor.position.set(cont.L / 2, -0.004, cont.W / 2);
+  const door = new THREE.Mesh(doorGeo, doorMat); door.rotation.y = Math.PI / 2; door.position.set(cont.L + 0.002, cont.H / 2, cont.W / 2);
+  const label = makeLabel('Puertas'); label.position.set(cont.L + 1.5, cont.H * 0.55, cont.W / 2);
+  root.add(faces, wire, floor, door, label);
+
+  for (const b of placed) {
+    const m = new THREE.Mesh(unitBox, getMat(b.def.clientId));
+    m.scale.set(b.dx, b.dy, b.dz);
+    m.position.set(b.x + b.dx / 2, b.y + b.dy / 2, b.z + b.dz / 2);
+    m.add(new THREE.LineSegments(unitEdges, edgeMat));
+    m.userData.box = b;
+    m.visible = !state.hidden.has(b.def.clientId);
+    root.add(m); boxMeshes.push(m);
+  }
+  scene.add(root);
+
+  if (fitKey !== cont.key) { setView('iso'); fitKey = cont.key; }
+}
+
+function previewContainer() { buildScene(getCont(), []); renderLegend(); }
+
+function showContainer(i) {
+  const res = state.results;
+  if (!res || !res.containers[i]) return;
+  state.currentIdx = i;
+  buildScene(res.cont, res.containers[i].placed);
+  renderTabs(); renderKPIs(); renderLegend();
+}
+
+/* ---------- Vistas predefinidas ---------- */
+function setView(name) {
+  if (!camera) return;
+  const { L, W, H } = viewDims, d = Math.max(L, W * 2.2, H * 2) * 1.55;
+  const P = { iso: [d * 0.62, d * 0.55, d * 0.78], top: [0.01, d * 1.15, 0.01], side: [0, H * 0.55, d * 1.05], door: [d * 1.15, H * 0.6, 0.01] }[name] || [d, d, d];
+  camera.position.set(P[0], P[1], P[2]);
+  controls.target.set(0, H / 2, 0);
+  controls.update();
+}
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+$('btnShot').addEventListener('click', () => {
+  if (!renderer) return;
+  renderer.render(scene, camera);
+  const a = document.createElement('a');
+  a.download = `cubicaje-contenedor-${state.currentIdx + 1}.png`;
+  a.href = renderer.domElement.toDataURL('image/png');
+  a.click();
+});
+
+/* ---------- Leyenda de clientes (clic para ocultar/mostrar su carga) ---------- */
+function renderLegend() {
+  const res = state.results, el = $('legend');
+  const ids = [];
+  if (res && res.containers[state.currentIdx]) res.containers[state.currentIdx].placed.forEach(b => { if (!ids.includes(b.def.clientId)) ids.push(b.def.clientId); });
+  el.innerHTML = ids.map(id => {
+    const c = clientInfo(id); if (!c) return '';
+    return `<button class="lg pointer-events-auto ${state.hidden.has(id) ? 'off' : ''}" data-hide="${id}" type="button" title="Clic para ocultar o mostrar"><i style="background:${c.color}"></i>${esc(c.name)}</button>`;
+  }).join('');
+}
+$('legend').addEventListener('click', e => {
+  const b = e.target.closest('[data-hide]');
+  if (!b) return;
+  const id = b.dataset.hide;
+  state.hidden.has(id) ? state.hidden.delete(id) : state.hidden.add(id);
+  boxMeshes.forEach(m => { m.visible = !state.hidden.has(m.userData.box.def.clientId); });
+  renderLegend();
+});
+
+/* ---------- Información al pasar el mouse sobre una caja ---------- */
+const raycaster = (typeof THREE !== 'undefined') ? new THREE.Raycaster() : null;
+const mouse = { x: 0, y: 0, cx: 0, cy: 0, pending: false };
+$('gl').addEventListener('mousemove', e => {
+  const r = $('gl').getBoundingClientRect();
+  mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  mouse.cx = e.clientX - r.left; mouse.cy = e.clientY - r.top;
+  if (mouse.pending) return;
+  mouse.pending = true;
+  requestAnimationFrame(() => {
+    mouse.pending = false;
+    if (!raycaster || !camera) return;
+    raycaster.setFromCamera({ x: mouse.x, y: mouse.y }, camera);
+    const hit = raycaster.intersectObjects(boxMeshes.filter(m => m.visible), false)[0];
+    const tip = $('tip');
+    if (!hit) { tip.classList.add('hidden'); return; }
+    const b = hit.object.userData.box, c = clientInfo(b.def.clientId);
+    tip.innerHTML = `<b>${esc(b.def.cargoName)}</b><br>
+      <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c ? c.color : '#999'};margin-right:5px"></span>${esc(c ? c.name : 'Cliente eliminado')}<br>
+      ${fmt(b.dx * 100, 0)} × ${fmt(b.dz * 100, 0)} × ${fmt(b.dy * 100, 0)} cm (largo × ancho × alto)<br>
+      ${fmt(b.def.kg, 1)} kg · ${b.def.stackable ? 'apilable' : 'no apilable'}`;
+    tip.classList.remove('hidden');
+    tip.style.left = Math.min(mouse.cx + 14, $('viewport').clientWidth - 250) + 'px';
+    tip.style.top = Math.max(8, mouse.cy + 14) + 'px';
+  });
+});
+$('gl').addEventListener('mouseleave', () => $('tip').classList.add('hidden'));
+
+/* =====================================================================
+   5. ARRANQUE
+   ===================================================================== */
+fillContainerSelect();
+updateContInfo();
+loadExample();
+renderClients();
+renderTabs();
+renderKPIs();
+if (initThree()) previewContainer();
+calculate(true);            // calcula el ejemplo al abrir la página
+
+})();
+</script>
+</body>
+</html>
