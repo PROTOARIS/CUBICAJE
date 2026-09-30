@@ -961,6 +961,10 @@ function renderTabs() {
   el.innerHTML = res.containers.map((c, i) =>
     `<button class="tab ${i === state.currentIdx ? 'tab-on' : ''}" data-tab="${i}" type="button">Contenedor ${i + 1}<span>${fmt(c.volume / vol * 100, 0)} % · ${fmt(c.weight, 0)} kg</span></button>`).join('');
 }
+$('kpis').addEventListener('click', e => {
+  const r = e.target.closest('[data-tab]');
+  if (r) showContainer(+r.dataset.tab);
+});
 $('tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]');
   if (b) showContainer(+b.dataset.tab);
@@ -1028,12 +1032,20 @@ function renderKPIs() {
       </section>`;
     }
 
-    /* --- Totales de todos los contenedores --- */
+    /* --- Totales de todos los contenedores + detalle por contenedor --- */
     const tv = res.containers.reduce((s, x) => s + x.volume, 0), tw = res.containers.reduce((s, x) => s + x.weight, 0);
+    const nC = res.containers.length;
     html += `<section class="p-4 border-b border-line">
       <h3 class="sec-title mb-2">Total de la consolidación</h3>
-      <div class="grid grid-cols-3 gap-2">${stat('Contenedores', res.containers.length)}${stat('CBM cargados', fmt(tv))}${stat('Peso (kg)', fmt(tw, 0))}</div>
-      <div class="text-[12.5px] mt-2">Eficiencia media: <b>${fmt(tv / (vol * Math.max(1, res.containers.length)) * 100, 1)} %</b> · cálculo en ${fmt(res.ms, 0)} ms</div>
+      <div class="grid grid-cols-3 gap-2">${stat('CBM total', fmt(tv))}${stat('Peso total (kg)', fmt(tw, 0))}${stat('Contenedores', nC)}</div>
+      <div class="text-[12.5px] mt-2">Eficiencia media: <b>${fmt(tv / (vol * Math.max(1, nC)) * 100, 1)} %</b> · cálculo en ${fmt(res.ms, 0)} ms</div>
+      ${nC >= 2 ? `<table class="kt mt-3">
+        <thead><tr><th>Contenedor</th><th>CBM</th><th>Peso (kg)</th><th>Ocup.</th></tr></thead>
+        <tbody>
+        ${res.containers.map((c, i) => `<tr data-tab="${i}" style="cursor:pointer;${i === state.currentIdx ? 'background:#eef6f5;font-weight:600' : ''}" title="Clic para ver este contenedor">
+          <td>Contenedor ${i + 1}</td><td>${fmt(c.volume)}</td><td>${fmt(c.weight, 0)}</td><td>${fmt(c.volume / vol * 100, 0)} %</td></tr>`).join('')}
+        <tr style="font-weight:700"><td>Total</td><td>${fmt(tv)}</td><td>${fmt(tw, 0)}</td><td></td></tr>
+        </tbody></table>` : ''}
     </section>`;
 
     /* --- Verificación del cubicaje --- */
